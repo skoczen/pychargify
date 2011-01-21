@@ -271,7 +271,9 @@ class ChargifyBase(object):
         print('sending: %s' % data)
 
         http.send(data)
+
         response = http.getresponse()
+        r = response.read()
 
         # Unauthorized Error
         if response.status == 401:
@@ -293,7 +295,7 @@ class ChargifyBase(object):
         elif response.status in [405, 500]:
             raise ChargifyServerError()
 
-        return response.read()
+        return r
 
     def _save(self, url, node_name):
         """
@@ -433,6 +435,18 @@ class Usage(object):
         self.memo = memo
 
 
+class Component(object):
+    def __init__(self, name, kind, subscription,
+        id, quantity, scheme, unit_name):
+        self.name = name
+        self.kind = kind
+        self.subscription = subscription
+        self.id = id
+        self.quantity = quantity
+        self.scheme = scheme
+        self.unit_name = unit_name
+
+
 class ChargifySubscription(ChargifyBase):
     """
     Represents Chargify Subscriptions
@@ -471,9 +485,22 @@ class ChargifySubscription(ChargifyBase):
         return self._applyA(self._get('/subscriptions.xml'),
             self.__name__, 'subscription')
 
+    def getComponent(self, component_id):
+        """
+        Gets the status of a quantity based component..
+        """
+
+        dom = minidom.parseString(self.fix_xml_encoding(
+            self._get('/subscriptions/%s/components/%d.xml' % (
+                str(self.id), component_id))))
+
+        return [Component(*tuple(chain.from_iterable([[x.data
+            for x in i.childNodes] or [None] for i in n.childNodes])))
+            for n in dom.getElementsByTagName('component')]
+
     def createUsage(self, component_id, quantity, memo=None):
         """
-        Creates usage for the given component id.
+        Creates metered usage for a given component id.
         """
 
         data = '''<?xml version="1.0" encoding="UTF-8"?><usage>
@@ -487,6 +514,23 @@ class ChargifySubscription(ChargifyBase):
         return [Usage(*tuple(chain.from_iterable([[x.data
             for x in i.childNodes] or [None] for i in n.childNodes])))
             for n in dom.getElementsByTagName('usage')]
+
+    def updateQuantity(self, component_id, quantity):
+        """
+        Sets the quantity allocation for a given component id.
+        """
+
+        data = '''<?xml version="1.0" encoding="UTF-8"?><component>
+            <allocated_quantity type="integer">%d</allocated_quantity>
+          </component>''' % quantity
+
+        dom = minidom.parseString(self.fix_xml_encoding(
+        self._put('/subscriptions/%s/components/%d.xml' % (
+                str(self.id), component_id), data)
+        ))
+        return [Component(*tuple(chain.from_iterable([[x.data
+            for x in i.childNodes] or [None] for i in n.childNodes])))
+            for n in dom.getElementsByTagName('component')]
 
     def getByCustomerId(self, customer_id):
         return self._applyA(self._get('/customers/' + str(customer_id) +
@@ -502,7 +546,7 @@ class ChargifySubscription(ChargifyBase):
         return self._save('subscriptions', 'subscription')
 
     def resetBalance(self):
-        self._put("/subscriptions/" + self.id + "/reset_balance.xml", "")
+        self._put("/subscriptions/" + self.id + "/reset_balance.xml", '')
 
     def reactivate(self):
         self._put("/subscriptions/" + self.id + "/reactivate.xml", "")
