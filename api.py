@@ -92,6 +92,39 @@ class ChargifyServerError(ChargifyError):
     pass
 
 
+class Usage(object):
+    def __init__(self, id, memo, quantity):
+        self.id = id
+        self.quantity = int(quantity)
+        self.memo = memo
+
+
+class Component(object):
+    def __init__(self, name, kind, subscription,
+        id, quantity, scheme, unit_name):
+        self.name = name
+        self.kind = kind
+        self.subscription = subscription
+        self.id = id
+        self.quantity = quantity
+        self.scheme = scheme
+        self.unit_name = unit_name
+
+
+class ProductFamilyComponent(object):
+    def __init__(self, created_at, id, name, price_per_unit_in_cents, pricing_scheme,
+            product_family_id, unit_name, updated_at, kind):
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.product_family_id = product_family_id
+        self.price_per_unit = price_per_unit_in_cents
+        self.pricing_scheme = pricing_scheme
+        self.unit_name = unit_name
+        self.updated_at = updated_at
+        self.created_at = created_at
+
+
 class ChargifyBase(object):
     """
     The ChargifyBase class provides a common base for all classes
@@ -379,6 +412,41 @@ class ChargifyCustomer(ChargifyBase):
         return self._save('customers', 'customer')
 
 
+class ChargifyProductFamily(ChargifyBase):
+
+    __name__ = 'ChargifyProductFamily'
+    __attribute_types__ = {}
+    __xmlnodename__ = 'product_family'
+
+    id = None
+    accounting_code = None
+    description = ''
+    handle = ''
+    name = ''
+
+    def __init__(self, apikey, subdomain, nodename=''):
+        super(ChargifyProductFamily, self).__init__(apikey, subdomain)
+        if nodename:
+            self.__xmlnodename__ = nodename
+
+    def getAll(self):
+        return self._applyA(self._get('/product_families/'),
+            self.__name__, self.__xmlnodename__)
+
+    def getComponentsById(self, id):
+        dom = minidom.parseString(self.fix_xml_encoding(
+            self._get('/product_families/%s/components/' % (
+                str(id)))))
+        return [ProductFamilyComponent(*tuple(chain.from_iterable([[x.data
+            for x in i.childNodes] or [None] for i in n.childNodes])))
+            for n in dom.getElementsByTagName('component')]
+
+    def getComponents(self):
+        if not self.id:
+            raise Exception('Uninitialized product family.')
+        return self.getComponentsById(self.id)
+
+
 class ChargifyProduct(ChargifyBase):
     """
     Represents Chargify Products
@@ -427,24 +495,6 @@ class ChargifyProduct(ChargifyBase):
     def getFormattedPrice(self):
         return "$%.2f" % (self.getPriceInDollars())
 
-
-class Usage(object):
-    def __init__(self, id, memo, quantity):
-        self.id = id
-        self.quantity = int(quantity)
-        self.memo = memo
-
-
-class Component(object):
-    def __init__(self, name, kind, subscription,
-        id, quantity, scheme, unit_name):
-        self.name = name
-        self.kind = kind
-        self.subscription = subscription
-        self.id = id
-        self.quantity = quantity
-        self.scheme = scheme
-        self.unit_name = unit_name
 
 
 class ChargifySubscription(ChargifyBase):
@@ -661,6 +711,9 @@ class Chargify:
 
     def Product(self, nodename=''):
         return ChargifyProduct(self.api_key, self.sub_domain, nodename)
+
+    def ProductFamily(self, nodename=''):
+        return ChargifyProductFamily(self.api_key, self.sub_domain, nodename)
 
     def Subscription(self, nodename=''):
         return ChargifySubscription(self.api_key, self.sub_domain, nodename)
