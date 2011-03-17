@@ -24,6 +24,7 @@ import base64
 import time
 import datetime
 import iso8601
+import inspect
 from itertools import chain
 from xml.dom import minidom
 
@@ -98,8 +99,12 @@ class ChargifyBase(object):
     in this module
     @license    GNU General Public License
     """
+
+    class Meta:
+        listing = None
+
     __ignore__ = ['api_key', 'sub_domain', 'base_host', 'request_host',
-        'id', '__xmlnodename__']
+        'id', '__xmlnodename__', 'Meta']
 
     api_key = ''
     sub_domain = ''
@@ -189,7 +194,7 @@ class ChargifyBase(object):
         """
         element = minidom.Element(self.__xmlnodename__)
         for property, value in self.__dict__.iteritems():
-            if not property in self.__ignore__:
+            if not property in self.__ignore__ and not inspect.isfunction(value):
                 if property in self.__attribute_types__:
                     element.appendChild(value._toxml(dom))
                 else:
@@ -335,12 +340,53 @@ class ChargifyBase(object):
     def _get_auth_string(self):
         return base64.encodestring('%s:%s' % (self.api_key, 'x'))[:-1]
 
+    def getAll(self):
+        if self.Meta.listing:
+            return self._applyA(self._get('/%s.xml' % self.Meta.listing),
+                self.__name__, self.__xmlnodename__)
+        raise NotImplementedError('Subclass is missing Meta class attribute listing')
+
+    def getById(self, id):
+        if self.Meta.listing:
+            return self._applyS(self._get('/%s/%s.xml' % (self.Meta.listing, str(id))),
+                self.__name__, self.__xmlnodename__)
+        raise NotImplementedError('Subclass is missing Meta class attribute listing')
+
+    def __get_by_attribute__(self, key, value):
+        if self.Meta.listing:
+            return self._applyS(self._get('/%s/lookup.xml?%s=%s' %(self.Meta.listing,
+                str(key), str(value))), self.__name__, self.__xmlnodename__)
+        raise NotImplementedError('Subclass is missing Meta class attribute listing')
+
+    def save(self):
+        if self.Meta.listing:
+            return self._save(self.Meta.listing, self.__xmlnodename__)
+        raise NotImplementedError('Subclass is missing Meta class attribute listing')
+
+
+class CompoundKeyMixin:
+    def getByCompoundKey(self, parent_id, sub_id):
+        if 'compound_key' in self.Meta.__dict__.keys():
+            _cb, _a = (self._applyA, ('/%s' % self.Meta.compound_key[2])) \
+                if len(self.Meta.compound_key) == 3 else (self._applyS, '')
+
+            return _cb(self._get('/%s.xml' % ('/'.join(['%s/%s' % i
+                for i in zip(self.Meta.compound_key[:2],
+                (str(parent_id), str(sub_id)))]) + _a)),
+                    self.__name__, self.__xmlnodename__)
+
+        raise NotImplementedError('Subclass is missing Meta class attribute compound key')
+
 
 class ChargifyCustomer(ChargifyBase):
     """
     Represents Chargify Customers
     @license    GNU General Public License
     """
+
+    class Meta:
+        listing = 'customers'
+
     __name__ = 'ChargifyCustomer'
     __attribute_types__ = {}
     __xmlnodename__ = 'customer'
@@ -354,32 +400,23 @@ class ChargifyCustomer(ChargifyBase):
     created_at = None
     modified_at = None
 
-    def __init__(self, apikey, subdomain, nodename=''):
+    def __init__(self, apikey, subdomain):
         super(ChargifyCustomer, self).__init__(apikey, subdomain)
-        if nodename:
-            self.__xmlnodename__ = nodename
-
-    def getAll(self):
-        return self._applyA(self._get('/customers.xml'),
-            self.__name__, 'customer')
-
-    def getById(self, id):
-        return self._applyS(self._get('/customers/' + str(id) + '.xml'),
-            self.__name__, 'customer')
-
-    def getByReference(self, reference):
-        return self._applyS(self._get('/customers/lookup.xml?reference=' +
-            str(reference)), self.__name__, 'customer')
+        self.getByReference = lambda v: self.__get_by_attribute__('reference', v)
 
     def getSubscriptions(self):
         obj = ChargifySubscription(self.api_key, self.sub_domain)
         return obj.getByCustomerId(self.id)
 
-    def save(self):
-        return self._save('customers', 'customer')
-
 
 class ChargifyProductFamily(ChargifyBase):
+    """
+    Represents Chargify Product Families
+    @license    GNU General Public License
+    """
+
+    class Meta:
+        listing = 'product_families'
 
     __name__ = 'ChargifyProductFamily'
     __attribute_types__ = {}
@@ -391,23 +428,9 @@ class ChargifyProductFamily(ChargifyBase):
     handle = ''
     name = ''
 
-    def __init__(self, apikey, subdomain, nodename=''):
-        super(ChargifyProductFamily, self).__init__(apikey, subdomain)
-        if nodename:
-            self.__xmlnodename__ = nodename
-
-    def getAll(self):
-        return self._applyA(self._get('/product_families/'),
-            self.__name__, self.__xmlnodename__)
-
-    def getById(self, id):
-        return self._applyS(self._get('/product_families/' + str(id) + '.xml'),
-            self.__name__, self.__xmlnodename__)
-
     def getComponents(self):
         obj = ChargifyProductFamilyComponent(self.api_key, self.sub_domain)
         return obj.getByProductFamilyId(self.id)
-
 
 
 class ChargifyProductFamilyComponent(ChargifyBase):
@@ -426,15 +449,20 @@ class ChargifyProductFamilyComponent(ChargifyBase):
     updated_at = None
     created_at = None
 
-
-    def __init__(self, apikey, subdomain, nodename=''):
-        super(ChargifyProductFamilyComponent, self).__init__(apikey, subdomain)
-        if nodename:
-            self.__xmlnodename__ = nodename
-
     def getByProductFamilyId(self, id):
         return self._applyA(self._get('/product_families/' + str(id) + '/components.xml'),
             self.__name__, self.__xmlnodename__)
+
+    def getByIds(self, product_family_id, id):
+        result = None
+        url = '/product_families/' + str(product_family_id) + '/components.xml'
+        components = self._applyA(
+            self._get(url), self.__name__, self.__xmlnodename__)
+        if components:
+            filtered = filter(lambda c: c.id==str(id), components)
+            if len(filtered) > 0:
+                result = filtered[0]
+        return result
 
 
 class ChargifyProduct(ChargifyBase):
@@ -442,6 +470,10 @@ class ChargifyProduct(ChargifyBase):
     Represents Chargify Products
     @license    GNU General Public License
     """
+
+    class Meta:
+        listing = 'products'
+
     __name__ = 'ChargifyProduct'
     __attribute_types__ = {
         'product_family': 'ChargifyProductFamily',
@@ -457,25 +489,9 @@ class ChargifyProduct(ChargifyBase):
     interval_unit = ''
     interval = 0
 
-    def __init__(self, apikey, subdomain, nodename=''):
-        super(ChargifyProduct, self).__init__(apikey, subdomain)
-        if nodename:
-            self.__xmlnodename__ = nodename
-
-    def getAll(self):
-        return self._applyA(self._get('/products.xml'),
-            self.__name__, 'product')
-
-    def getById(self, id):
-        return self._applyS(self._get('/products/' + str(id) + '.xml'),
-            self.__name__, 'product')
-
     def getByHandle(self, handle):
         return self._applyS(self._get('/products/handle/' + str(handle) +
-            '.xml'), self.__name__, 'product')
-
-    def save(self):
-        return self._save('products', 'product')
+            '.xml'), self.__name__, self.__xmlnodename__)
 
     def getPaymentPageUrl(self):
         return ('https://' + self.request_host + '/h/' +
@@ -488,12 +504,15 @@ class ChargifyProduct(ChargifyBase):
         return "$%.2f" % (self.getPriceInDollars())
 
 
-
 class ChargifySubscription(ChargifyBase):
     """
     Represents Chargify Subscriptions
     @license    GNU General Public License
     """
+
+    class Meta:
+        listing = 'subscriptions'
+
     __name__ = 'ChargifySubscription'
     __attribute_types__ = {
         'customer': 'ChargifyCustomer',
@@ -518,15 +537,6 @@ class ChargifySubscription(ChargifyBase):
     product_handle = ''
     credit_card = None
 
-    def __init__(self, apikey, subdomain, nodename=''):
-        super(ChargifySubscription, self).__init__(apikey, subdomain)
-        if nodename:
-            self.__xmlnodename__ = nodename
-
-    def getAll(self):
-        return self._applyA(self._get('/subscriptions.xml'),
-            self.__name__, 'subscription')
-
     def getComponents(self):
         """
         Gets the subscription components
@@ -550,9 +560,6 @@ class ChargifySubscription(ChargifyBase):
         i, = self._applyA(self._get('/subscriptions/' + str(subscription_id) +
             '.xml'), self.__name__, 'subscription')
         return i
-
-    def save(self):
-        return self._save('subscriptions', 'subscription')
 
     def resetBalance(self):
         self._put("/subscriptions/" + self.id + "/reset_balance.xml", '')
@@ -603,11 +610,6 @@ class ChargifyCreditCard(ChargifyBase):
     billing_zip = ''
     billing_country = ''
 
-    def __init__(self, apikey, subdomain, nodename=''):
-        super(ChargifyCreditCard, self).__init__(apikey, subdomain)
-        if nodename:
-            self.__xmlnodename__ = nodename
-
     def save(self, subscription):
         path = "/subscriptions/%s.xml" % (subscription.id)
 
@@ -631,10 +633,14 @@ class ChargifyCreditCard(ChargifyBase):
             self.__name__, "subscription")
 
 
-class ChargifySubscriptionComponent(ChargifyBase):
+class ChargifySubscriptionComponent(ChargifyBase, CompoundKeyMixin):
     """
     Represents Chargify Subscription Component
     """
+
+    class Meta:
+        compound_key = ('subscriptions', 'components')
+
     __name__ = 'ChargifySubscriptionComponent'
     __attribute_types__ = {}
     __xmlnodename__ = 'component'
@@ -649,19 +655,9 @@ class ChargifySubscriptionComponent(ChargifyBase):
     pricing_scheme = '' # quantity-based-component
     enabled = True # on-off-component
 
-    def __init__(self, apikey, subdomain, nodename=''):
-        super(ChargifySubscriptionComponent, self).__init__(apikey, subdomain)
-        if nodename:
-            self.__xmlnodename__ = nodename
-
     def getBySubscriptionId(self, id):
         return self._applyA(self._get('/subscriptions/' + str(id) + '/components.xml'),
             self.__name__, self.__xmlnodename__)
-
-    def getByCompoundKey(self, subscription_id, component_id):
-        url = '/subscriptions/' + str(subscription_id)
-        url += '/components/' + str(component_id) +'.xml'
-        return self._applyS(self._get(url), self.__name__, self.__xmlnodename__)
 
     def updateQuantity(self, quantity):
         """
@@ -710,19 +706,21 @@ class ChargifySubscriptionComponent(ChargifyBase):
             <quantity>%d</quantity><memo>%s</memo></usage>''' % (
                 quantity, memo or "")
 
-        dom = minidom.parseString(self.fix_xml_encoding(
-            self._post('/subscriptions/%s/components/%d/usages.xml' % (
-                str(self.subscription_id), str(component_id)), data)))
-
-        return [Usage(*tuple(chain.from_iterable([[x.data
-            for x in i.childNodes] or [None] for i in n.childNodes])))
-            for n in dom.getElementsByTagName('usage')]
+        return self._applyA(
+            self._post('/subscriptions/%s/components/%s/usages.xml' % (
+                str(self.subscription_id), str(self.component_id)), data),
+            ChargifyComponentUsage.__name__,
+            ChargifyComponentUsage.__xmlnodename__)
 
 
-class ChargifyComponentUsage(ChargifyBase):
+class ChargifyComponentUsage(ChargifyBase, CompoundKeyMixin):
     """
     Represents Chargify Subscription Component Usage
     """
+
+    class Meta:
+        compound_key = ('subscriptions', 'components', 'usages')
+
     __name__ = 'ChargifyComponentUsage'
     __attribute_types__ = {}
     __xmlnodename__ = 'usage'
@@ -730,16 +728,6 @@ class ChargifyComponentUsage(ChargifyBase):
     id = None
     quantity = 0
     memo = ''
-
-    def __init__(self, apikey, subdomain, nodename=''):
-        super(ChargifyComponentUsage, self).__init__(apikey, subdomain)
-        if nodename:
-            self.__xmlnodename__ = nodename
-
-    def getByCompoundKey(self, subscription_id, component_id):
-        url = '/subscriptions/' + str(subscription_id)
-        url += '/components/' + str(component_id) +'/usages.xml'
-        return self._applyA(self._get(url), self.__name__, self.__xmlnodename__)
 
 
 class ChargifyPostBack(ChargifyBase):
@@ -776,26 +764,59 @@ class Chargify:
         self.api_key = apikey
         self.sub_domain = subdomain
 
-    def Customer(self, nodename=''):
-        return ChargifyCustomer(self.api_key, self.sub_domain, nodename)
+    def Customer(self):
+        return ChargifyCustomer(self.api_key, self.sub_domain)
 
-    def Product(self, nodename=''):
-        return ChargifyProduct(self.api_key, self.sub_domain, nodename)
+    def Product(self):
+        return ChargifyProduct(self.api_key, self.sub_domain)
 
-    def Component(self, nodename=''):
-        return ChargifyProductFamilyComponent(self.api_key, self.sub_domain, nodename)
+    def Component(self):
+        return ChargifyProductFamilyComponent(self.api_key,
+            self.sub_domain)
 
-    def ProductFamily(self, nodename=''):
-        return ChargifyProductFamily(self.api_key, self.sub_domain, nodename)
+    def ProductFamily(self):
+        return ChargifyProductFamily(self.api_key, self.sub_domain)
 
-    def Subscription(self, nodename=''):
-        return ChargifySubscription(self.api_key, self.sub_domain, nodename)
+    def Subscription(self):
+        return ChargifySubscription(self.api_key, self.sub_domain)
 
-    def SubscriptionComponent(self, nodename=''):
-        return ChargifySubscriptionComponent(self.api_key, self.sub_domain, nodename)
+    def SubscriptionComponent(self):
+        return ChargifySubscriptionComponent(self.api_key,
+            self.sub_domain)
 
-    def CreditCard(self, nodename=''):
-        return ChargifyCreditCard(self.api_key, self.sub_domain, nodename)
+    def ComponentUsage(self):
+        return ChargifyComponentUsage(self.api_key, self.sub_domain)
+
+    def CreditCard(self):
+        return ChargifyCreditCard(self.api_key, self.sub_domain)
 
     def PostBack(self, postbackdata):
         return ChargifyPostBack(self.api_key, self.sub_domain, postbackdata)
+
+    @property
+    def Customers(self):
+        return ChargifyCustomer(self.api_key, self.sub_domain)
+
+    @property
+    def Products(self):
+        return ChargifyProduct(self.api_key, self.sub_domain)
+
+    @property
+    def Components(self):
+        return ChargifyProductFamilyComponent(self.api_key, self.sub_domain)
+
+    @property
+    def ProductFamilies(self):
+        return ChargifyProductFamily(self.api_key, self.sub_domain)
+
+    @property
+    def Subscriptions(self):
+        return ChargifySubscription(self.api_key, self.sub_domain)
+
+    @property
+    def SubscriptionComponents(self):
+        return ChargifySubscriptionComponent(self.api_key, self.sub_domain)
+
+    @property
+    def ComponentUsages(self):
+        return ChargifyComponentUsage(self.api_key, self.sub_domain)
