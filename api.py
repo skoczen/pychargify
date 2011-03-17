@@ -753,37 +753,59 @@ class Chargify:
         self.api_key = apikey
         self.sub_domain = subdomain
 
-    @property
     def Customer(self):
         return ChargifyCustomer(self.api_key, self.sub_domain)
 
-    @property
     def Product(self):
         return ChargifyProduct(self.api_key, self.sub_domain)
 
-    @property
     def Component(self):
-        return ChargifyProductFamilyComponent(self.api_key, self.sub_domain)
+        return ChargifyProductFamilyComponent(self.api_key,
+            self.sub_domain)
 
-    @property
     def ProductFamily(self):
         return ChargifyProductFamily(self.api_key, self.sub_domain)
 
-    @property
     def Subscription(self):
         return ChargifySubscription(self.api_key, self.sub_domain)
 
-    @property
     def SubscriptionComponent(self):
-        return ChargifySubscriptionComponent(self.api_key, self.sub_domain)
+        return ChargifySubscriptionComponent(self.api_key,
+            self.sub_domain)
 
-    @property
     def ComponentUsage(self):
         return ChargifyComponentUsage(self.api_key, self.sub_domain)
 
-    @property
     def CreditCard(self):
         return ChargifyCreditCard(self.api_key, self.sub_domain)
 
     def PostBack(self, postbackdata):
         return ChargifyPostBack(self.api_key, self.sub_domain, postbackdata)
+
+    @property
+    def Customers(self):
+        return ChargifyCustomer(self.api_key, self.sub_domain)
+
+    @property
+    def Products(self):
+        return ChargifyProduct(self.api_key, self.sub_domain)
+
+    @property
+    def Components(self):
+        return ChargifyProductFamilyComponent(self.api_key, self.sub_domain)
+
+    @property
+    def ProductFamilies(self):
+        return ChargifyProductFamily(self.api_key, self.sub_domain)
+
+    @property
+    def Subscriptions(self):
+        return ChargifySubscription(self.api_key, self.sub_domain)
+
+    @property
+    def SubscriptionComponents(self):
+        return ChargifySubscriptionComponent(self.api_key, self.sub_domain)
+
+    @property
+    def ComponentUsages(self):
+        return ChargifyComponentUsage(self.api_key, self.sub_domain)
