@@ -92,39 +92,6 @@ class ChargifyServerError(ChargifyError):
     pass
 
 
-class Usage(object):
-    def __init__(self, id, memo, quantity):
-        self.id = id
-        self.quantity = int(quantity)
-        self.memo = memo
-
-
-class Component(object):
-    def __init__(self, name, kind, subscription,
-        id, quantity, scheme, unit_name):
-        self.name = name
-        self.kind = kind
-        self.subscription = subscription
-        self.id = id
-        self.quantity = quantity
-        self.scheme = scheme
-        self.unit_name = unit_name
-
-
-class ProductFamilyComponent(object):
-    def __init__(self, created_at, id, name, price_per_unit_in_cents, pricing_scheme,
-            product_family_id, unit_name, updated_at, kind):
-        self.id = id
-        self.name = name
-        self.kind = kind
-        self.product_family_id = product_family_id
-        self.price_per_unit = price_per_unit_in_cents
-        self.pricing_scheme = pricing_scheme
-        self.unit_name = unit_name
-        self.updated_at = updated_at
-        self.created_at = created_at
-
-
 class ChargifyBase(object):
     """
     The ChargifyBase class provides a common base for all classes
@@ -433,18 +400,41 @@ class ChargifyProductFamily(ChargifyBase):
         return self._applyA(self._get('/product_families/'),
             self.__name__, self.__xmlnodename__)
 
-    def getComponentsById(self, id):
-        dom = minidom.parseString(self.fix_xml_encoding(
-            self._get('/product_families/%s/components/' % (
-                str(id)))))
-        return [ProductFamilyComponent(*tuple(chain.from_iterable([[x.data
-            for x in i.childNodes] or [None] for i in n.childNodes])))
-            for n in dom.getElementsByTagName('component')]
+    def getById(self, id):
+        return self._applyS(self._get('/product_families/' + str(id) + '.xml'),
+            self.__name__, self.__xmlnodename__)
 
     def getComponents(self):
-        if not self.id:
-            raise Exception('Uninitialized product family.')
-        return self.getComponentsById(self.id)
+        obj = ChargifyProductFamilyComponent(self.api_key, self.sub_domain)
+        return obj.getByProductFamilyId(self.id)
+
+
+
+class ChargifyProductFamilyComponent(ChargifyBase):
+
+    __name__ = 'ChargifyProductFamilyComponent'
+    __attribute_types__ = {}
+    __xmlnodename__ = 'component'
+
+    id = None
+    name = ''
+    kind = ''
+    product_family_id = 0
+    price_per_unit_in_cents = 0
+    pricing_scheme = ''
+    unit_name = None
+    updated_at = None
+    created_at = None
+
+
+    def __init__(self, apikey, subdomain, nodename=''):
+        super(ChargifyProductFamilyComponent, self).__init__(apikey, subdomain)
+        if nodename:
+            self.__xmlnodename__ = nodename
+
+    def getByProductFamilyId(self, id):
+        return self._applyA(self._get('/product_families/' + str(id) + '/components.xml'),
+            self.__name__, self.__xmlnodename__)
 
 
 class ChargifyProduct(ChargifyBase):
@@ -453,14 +443,16 @@ class ChargifyProduct(ChargifyBase):
     @license    GNU General Public License
     """
     __name__ = 'ChargifyProduct'
-    __attribute_types__ = {}
+    __attribute_types__ = {
+        'product_family': 'ChargifyProductFamily',
+    }
     __xmlnodename__ = 'product'
 
     id = None
     price_in_cents = 0
     name = ''
     handle = ''
-    product_family = {}
+    product_family = None
     accounting_code = ''
     interval_unit = ''
     interval = 0
@@ -535,52 +527,19 @@ class ChargifySubscription(ChargifyBase):
         return self._applyA(self._get('/subscriptions.xml'),
             self.__name__, 'subscription')
 
+    def getComponents(self):
+        """
+        Gets the subscription components
+        """
+        obj = ChargifySubscriptionComponent(self.api_key, self.sub_domain)
+        return obj.getBySubscriptionId(self.id)
+
     def getComponent(self, component_id):
         """
         Gets the status of a quantity based component..
         """
-
-        dom = minidom.parseString(self.fix_xml_encoding(
-            self._get('/subscriptions/%s/components/%d.xml' % (
-                str(self.id), component_id))))
-
-        return [Component(*tuple(chain.from_iterable([[x.data
-            for x in i.childNodes] or [None] for i in n.childNodes])))
-            for n in dom.getElementsByTagName('component')]
-
-    def createUsage(self, component_id, quantity, memo=None):
-        """
-        Creates metered usage for a given component id.
-        """
-
-        data = '''<?xml version="1.0" encoding="UTF-8"?><usage>
-            <quantity>%d</quantity><memo>%s</memo></usage>''' % (
-                quantity, memo or "")
-
-        dom = minidom.parseString(self.fix_xml_encoding(
-            self._post('/subscriptions/%s/components/%d/usages.xml' % (
-                str(self.id), component_id), data)))
-
-        return [Usage(*tuple(chain.from_iterable([[x.data
-            for x in i.childNodes] or [None] for i in n.childNodes])))
-            for n in dom.getElementsByTagName('usage')]
-
-    def updateQuantity(self, component_id, quantity):
-        """
-        Sets the quantity allocation for a given component id.
-        """
-
-        data = '''<?xml version="1.0" encoding="UTF-8"?><component>
-            <allocated_quantity type="integer">%d</allocated_quantity>
-          </component>''' % quantity
-
-        dom = minidom.parseString(self.fix_xml_encoding(
-        self._put('/subscriptions/%s/components/%d.xml' % (
-                str(self.id), component_id), data)
-        ))
-        return [Component(*tuple(chain.from_iterable([[x.data
-            for x in i.childNodes] or [None] for i in n.childNodes])))
-            for n in dom.getElementsByTagName('component')]
+        obj = ChargifySubscriptionComponent(self.api_key, self.sub_domain)
+        return obj.getByCompoundKey(self.id, component_id)
 
     def getByCustomerId(self, customer_id):
         return self._applyA(self._get('/customers/' + str(customer_id) +
@@ -672,6 +631,117 @@ class ChargifyCreditCard(ChargifyBase):
             self.__name__, "subscription")
 
 
+class ChargifySubscriptionComponent(ChargifyBase):
+    """
+    Represents Chargify Subscription Component
+    """
+    __name__ = 'ChargifySubscriptionComponent'
+    __attribute_types__ = {}
+    __xmlnodename__ = 'component'
+
+    component_id = None
+    subscription_id = None
+    name = ''
+    kind = ''
+    unit_name = None
+    unit_balance = 0 # metered-component
+    allocatted_quantity = 0 # quantity-based-component
+    pricing_scheme = '' # quantity-based-component
+    enabled = True # on-off-component
+
+    def __init__(self, apikey, subdomain, nodename=''):
+        super(ChargifySubscriptionComponent, self).__init__(apikey, subdomain)
+        if nodename:
+            self.__xmlnodename__ = nodename
+
+    def getBySubscriptionId(self, id):
+        return self._applyA(self._get('/subscriptions/' + str(id) + '/components.xml'),
+            self.__name__, self.__xmlnodename__)
+
+    def getByCompoundKey(self, subscription_id, component_id):
+        url = '/subscriptions/' + str(subscription_id)
+        url += '/components/' + str(component_id) +'.xml'
+        return self._applyS(self._get(url), self.__name__, self.__xmlnodename__)
+
+    def updateQuantity(self, quantity):
+        """
+        Sets the quantity allocation for a given component id.
+        """
+        if self.component_id is None or self.subscription_id is None:
+            raise ChargifyError()
+
+        if self.kind != 'quantity_based_component':
+            raise ChargifyError()
+
+        self.allocatted_quantity = quantity
+        data = '''<?xml version="1.0" encoding="UTF-8"?><component>
+            <allocated_quantity type="integer">%d</allocated_quantity>
+          </component>''' % self.allocatted_quantity
+
+        dom = minidom.parseString(self.fix_xml_encoding(
+        self._put('/subscriptions/%s/components/%s.xml' % (
+                str(self.subscription_id), str(component_id)), data)
+        ))
+
+    def getUsages(self):
+        """
+        Gets the subscription components
+        """
+        if self.component_id is None or self.subscription_id is None:
+            raise ChargifyError()
+
+        if self.kind != 'metered_component':
+            raise ChargifyError()
+
+        obj = ChargifyComponentUsage(self.api_key, self.sub_domain)
+        return obj.getByCompoundKey(self.subscription_id, self.component_id)
+
+    def createUsage(self, quantity, memo=None):
+        """
+        Creates metered usage for a given component id.
+        """
+        if self.component_id is None or self.subscription_id is None:
+            raise ChargifyError()
+
+        if self.kind != 'metered_component':
+            raise ChargifyError()
+
+        data = '''<?xml version="1.0" encoding="UTF-8"?><usage>
+            <quantity>%d</quantity><memo>%s</memo></usage>''' % (
+                quantity, memo or "")
+
+        dom = minidom.parseString(self.fix_xml_encoding(
+            self._post('/subscriptions/%s/components/%d/usages.xml' % (
+                str(self.subscription_id), str(component_id)), data)))
+
+        return [Usage(*tuple(chain.from_iterable([[x.data
+            for x in i.childNodes] or [None] for i in n.childNodes])))
+            for n in dom.getElementsByTagName('usage')]
+
+
+class ChargifyComponentUsage(ChargifyBase):
+    """
+    Represents Chargify Subscription Component Usage
+    """
+    __name__ = 'ChargifyComponentUsage'
+    __attribute_types__ = {}
+    __xmlnodename__ = 'usage'
+
+    id = None
+    quantity = 0
+    memo = ''
+
+    def __init__(self, apikey, subdomain, nodename=''):
+        super(ChargifyComponentUsage, self).__init__(apikey, subdomain)
+        if nodename:
+            self.__xmlnodename__ = nodename
+
+    def getByCompoundKey(self, subscription_id, component_id):
+        url = '/subscriptions/' + str(subscription_id)
+        url += '/components/' + str(component_id) +'/usages.xml'
+        return self._applyA(self._get(url), self.__name__, self.__xmlnodename__)
+
+
 class ChargifyPostBack(ChargifyBase):
     """
     Represents Chargify API Post Backs
@@ -712,11 +782,17 @@ class Chargify:
     def Product(self, nodename=''):
         return ChargifyProduct(self.api_key, self.sub_domain, nodename)
 
+    def Component(self, nodename=''):
+        return ChargifyProductFamilyComponent(self.api_key, self.sub_domain, nodename)
+
     def ProductFamily(self, nodename=''):
         return ChargifyProductFamily(self.api_key, self.sub_domain, nodename)
 
     def Subscription(self, nodename=''):
         return ChargifySubscription(self.api_key, self.sub_domain, nodename)
+
+    def SubscriptionComponent(self, nodename=''):
+        return ChargifySubscriptionComponent(self.api_key, self.sub_domain, nodename)
 
     def CreditCard(self, nodename=''):
         return ChargifyCreditCard(self.api_key, self.sub_domain, nodename)
