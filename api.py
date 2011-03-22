@@ -409,6 +409,10 @@ class ChargifyCustomer(ChargifyBase):
         return obj.getByCustomerId(self.id)
 
 
+class CustomerAttributes(ChargifyCustomer):
+    __xmlnodename__ = 'customer_attributes'
+
+
 class ChargifyProductFamily(ChargifyBase):
     """
     Represents Chargify Product Families
@@ -676,7 +680,7 @@ class ChargifySubscriptionComponent(ChargifyBase, CompoundKeyMixin):
 
         dom = minidom.parseString(self.fix_xml_encoding(
         self._put('/subscriptions/%s/components/%s.xml' % (
-                str(self.subscription_id), str(component_id)), data)
+                str(self.subscription_id), str(self.component_id)), data)
         ))
 
     def getUsages(self):
@@ -766,6 +770,9 @@ class Chargify:
 
     def Customer(self):
         return ChargifyCustomer(self.api_key, self.sub_domain)
+
+    def CustomerAttributes(self):
+        return CustomerAttributes(self.api_key, self.sub_domain)
 
     def Product(self):
         return ChargifyProduct(self.api_key, self.sub_domain)
