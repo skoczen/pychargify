@@ -25,8 +25,12 @@ import time
 import datetime
 import iso8601
 import inspect
+import logging
+
 from itertools import chain
 from xml.dom import minidom
+
+log = logging.getLogger("pychargify")
 
 
 try:
@@ -39,7 +43,7 @@ except Exception, e:
             # For AppEngine users
             import django.utils.simplejson as json
         except Exception, e:
-            print "No Json library found... Exiting."
+            log.error("No Json library found... Exiting.")
             exit()
 
 
@@ -273,7 +277,7 @@ class ChargifyBase(object):
         http.putheader("Content-Type", 'text/xml; charset="UTF-8"')
         http.endheaders()
 
-        print('sending: %s' % data)
+        log.debug('sending: %s' % data)
 
         http.send(data)
 
@@ -298,6 +302,8 @@ class ChargifyBase(object):
 
         # Generic Server Errors
         elif response.status in [405, 500]:
+            log.debug('response status: %s' % response.status)
+            log.debug('response reason: %s' % response.reason)
             raise ChargifyServerError()
 
         return r
