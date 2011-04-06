@@ -147,8 +147,9 @@ class ChargifyBase(object):
         for childnodes in node.childNodes:
             if childnodes.nodeType == 1 and not childnodes.nodeName == '':
                 if childnodes.nodeName in self.__attribute_types__:
+
                     obj.__setattr__(childnodes.nodeName,
-                        self._applyS(childnodes.toxml(),
+                        self._applyS(childnodes.toxml(encoding='utf-8'),
                         self.__attribute_types__[childnodes.nodeName],
                             childnodes.nodeName))
                 else:
@@ -168,15 +169,14 @@ class ChargifyBase(object):
         Decodes and re-encodes with xml characters.
         Strips out whitespace "text nodes".
         """
-        return unicode(''.join([i.strip() for i in xml.split('\n')])).encode(
-            'CP1252', 'replace').decode('utf-8', 'ignore').encode(
-            'ascii', 'xmlcharrefreplace')
+        return unicode(''.join([i.strip() for i in xml.split('\n')])
+                .encode('utf-8', 'xmlcharrefreplace'), 'utf-8')
 
     def _applyS(self, xml, obj_type, node_name):
         """
         Apply the values of the passed xml data to the a class
         """
-        dom = minidom.parseString(self.fix_xml_encoding(xml))
+        dom = minidom.parseString(xml)
         nodes = dom.getElementsByTagName(node_name)
         if nodes.length == 1:
             return self.__get_object_from_node(nodes[0], obj_type)
@@ -185,7 +185,7 @@ class ChargifyBase(object):
         """
         Apply the values of the passed data to a new class of the current type
         """
-        dom = minidom.parseString(self.fix_xml_encoding(xml))
+        dom = minidom.parseString(xml)
         nodes = dom.getElementsByTagName(node_name)
         objs = []
         for node in nodes:
@@ -203,46 +203,16 @@ class ChargifyBase(object):
                     element.appendChild(value._toxml(dom))
                 else:
                     node = minidom.Element(property)
-                    node_txt = dom.createTextNode(str(value))
+                    node_txt = dom.createTextNode(value.encode('ascii', 'xmlcharrefreplace'))
                     node.appendChild(node_txt)
                     element.appendChild(node)
         return element
 
     def _get(self, url):
         """
-        Handle HTTP GET's to the API
+        Handle HTTP GETs to the API
         """
-        headers = {
-            "Authorization": "Basic %s" % self._get_auth_string(),
-            "User-Agent": "pyChargify",
-            "Content-Type": 'text/xml'
-        }
-
-        r = httplib.HTTPSConnection(self.request_host)
-        r.request('GET', url, None, headers)
-        response = r.getresponse()
-
-        # Unauthorized Error
-        if response.status == 401:
-            raise ChargifyUnAuthorized()
-
-        # Forbidden Error
-        elif response.status == 403:
-            raise ChargifyForbidden()
-
-        # Not Found Error
-        elif response.status == 404:
-            raise ChargifyNotFound()
-
-        # Unprocessable Entity Error
-        elif response.status == 422:
-            raise ChargifyUnProcessableEntity()
-
-        # Generic Server Errors
-        elif response.status in [405, 500]:
-            raise ChargifyServerError()
-
-        return response.read()
+        return self._request('GET', url)
 
     def _post(self, url, data):
         """
@@ -262,7 +232,7 @@ class ChargifyBase(object):
         """
         return self._request('DELETE', url, data)
 
-    def _request(self, method, url, data=''):
+    def _request(self, method, url, data=None):
         """
         Handled the request and sends it to the server
         """
@@ -273,13 +243,17 @@ class ChargifyBase(object):
         http.putheader("User-Agent", "pychargify")
         http.putheader("Host", self.request_host)
         http.putheader("Accept", "application/xml")
-        http.putheader("Content-Length", str(len(data)))
+
+        if data:
+            http.putheader("Content-Length", str(len(data)))
+
         http.putheader("Content-Type", 'text/xml; charset="UTF-8"')
         http.endheaders()
 
         log.debug('sending: %s' % data)
 
-        http.send(data)
+        if data:
+            http.send(data)
 
         response = http.getresponse()
         r = response.read()
@@ -306,7 +280,7 @@ class ChargifyBase(object):
             log.debug('response reason: %s' % response.reason)
             raise ChargifyServerError()
 
-        return r
+        return self.fix_xml_encoding(r)
 
     def _save(self, url, node_name):
         """
@@ -623,23 +597,9 @@ class ChargifyCreditCard(ChargifyBase):
 
     def save(self, subscription):
         path = "/subscriptions/%s.xml" % (subscription.id)
-
-        data = u"""<?xml version="1.0" encoding="UTF-8"?>
-  <subscription>
-    <credit_card_attributes>
-      <full_number>%s</full_number>
-      <expiration_month>%s</expiration_month>
-      <expiration_year>%s</expiration_year>
-      <cvv>%s</cvv>
-      <first_name>%s</first_name>
-      <last_name>%s</last_name>
-      <zip>%s</zip>
-    </credit_card_attributes>
-  </subscription>""" % (self.full_number, self.expiration_month,
-          self.expiration_year, self.cvv, self.first_name,
-          self.last_name, self.zip)
-        # end improper indentation
-
+        data = u'<?xml version="1.0" encoding="UTF-8"?><subscription><credit_card_attributes>%s</credit_card_attributes></subscription>' % (
+                ''.join([u'<%s>%s</%s>' % (k, v, k) for (k, v) in self.__dict__.items()
+            if not k.startswith('_') and k not in self.__ignore__]))
         return self._applyS(self._put(path, data),
             self.__name__, "subscription")
 
