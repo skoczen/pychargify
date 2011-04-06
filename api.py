@@ -200,7 +200,16 @@ class ChargifyBase(object):
         for property, value in self.__dict__.iteritems():
             if not property in self.__ignore__ and not inspect.isfunction(value):
                 if property in self.__attribute_types__:
-                    element.appendChild(value._toxml(dom))
+                    if type(value) == list:
+                        node = minidom.Element(property)
+                        node.setAttribute('type', 'array')
+                        for v in value:
+                            child = v._toxml(dom)
+                            if child is not None:
+                                node.appendChild(child)
+                        element.appendChild(node)
+                    else:
+                        element.appendChild(value._toxml(dom))
                 else:
                     node = minidom.Element(property)
                     node_txt = dom.createTextNode(value.encode('ascii', 'xmlcharrefreplace'))
@@ -501,7 +510,8 @@ class ChargifySubscription(ChargifyBase):
     __attribute_types__ = {
         'customer': 'ChargifyCustomer',
         'product': 'ChargifyProduct',
-        'credit_card': 'ChargifyCreditCard'
+        'credit_card': 'ChargifyCreditCard',
+        'components': 'ChargifySubscriptionComponent',
     }
     __xmlnodename__ = 'subscription'
 
@@ -521,17 +531,19 @@ class ChargifySubscription(ChargifyBase):
     product = None
     product_handle = ''
     credit_card = None
+    components = None
 
     def getComponents(self):
         """
         Gets the subscription components
         """
-        obj = ChargifySubscriptionComponent(self.api_key, self.sub_domain)
-        return obj.getBySubscriptionId(self.id)
+        if self.id is not None:
+            obj = ChargifySubscriptionComponent(self.api_key, self.sub_domain)
+            return obj.getBySubscriptionId(self.id)
 
     def getComponent(self, component_id):
         """
-        Gets the status of a quantity based component..
+        Gets a subscription component..
         """
         obj = ChargifySubscriptionComponent(self.api_key, self.sub_domain)
         return obj.getByCompoundKey(self.id, component_id)
@@ -622,9 +634,36 @@ class ChargifySubscriptionComponent(ChargifyBase, CompoundKeyMixin):
     kind = ''
     unit_name = None
     unit_balance = 0 # metered-component
-    allocatted_quantity = 0 # quantity-based-component
+    allocated_quantity = 0 # quantity-based-component
     pricing_scheme = '' # quantity-based-component
-    enabled = True # on-off-component
+    enabled = False # on-off-component
+
+    def _toxml(self, dom):
+        """
+        Return a XML Representation of the object
+        """
+        if self.kind == 'metered_component':
+            return None
+
+        if self.kind == 'on_off_component':
+            property = 'enabled'
+        else:
+            property = 'allocated_quantity'
+
+        value = getattr(self, property)
+        if not value:
+            return None
+
+        element = minidom.Element(self.__xmlnodename__)
+        node = minidom.Element('component_id')
+        node_txt = dom.createTextNode(str(self.component_id))
+        node.appendChild(node_txt)
+        element.appendChild(node)
+        node = minidom.Element(property)
+        node_txt = dom.createTextNode(str(value))
+        node.appendChild(node_txt)
+        element.appendChild(node)
+        return element
 
     def getBySubscriptionId(self, id):
         return self._applyA(self._get('/subscriptions/' + str(id) + '/components.xml'),
@@ -640,10 +679,30 @@ class ChargifySubscriptionComponent(ChargifyBase, CompoundKeyMixin):
         if self.kind != 'quantity_based_component':
             raise ChargifyError()
 
-        self.allocatted_quantity = quantity
+        self.allocated_quantity = quantity
         data = '''<?xml version="1.0" encoding="UTF-8"?><component>
             <allocated_quantity type="integer">%d</allocated_quantity>
-          </component>''' % self.allocatted_quantity
+          </component>''' % self.allocated_quantity
+
+        dom = minidom.parseString(self.fix_xml_encoding(
+        self._put('/subscriptions/%s/components/%s.xml' % (
+                str(self.subscription_id), str(self.component_id)), data)
+        ))
+
+    def updateOnOff(self, enable):
+        """
+        Sets the enabled attr for a given component id.
+        """
+        if self.component_id is None or self.subscription_id is None:
+            raise ChargifyError()
+
+        if self.kind != 'on_off_component':
+            raise ChargifyError()
+
+        self.enabled = enabled
+        data = '''<?xml version="1.0" encoding="UTF-8"?><component>
+            <allocated_quantity>%s</allocated_quantity>
+          </component>''' % self.enabled
 
         dom = minidom.parseString(self.fix_xml_encoding(
         self._put('/subscriptions/%s/components/%s.xml' % (
@@ -652,7 +711,7 @@ class ChargifySubscriptionComponent(ChargifyBase, CompoundKeyMixin):
 
     def getUsages(self):
         """
-        Gets the subscription components
+        Gets the subscription component usages
         """
         if self.component_id is None or self.subscription_id is None:
             raise ChargifyError()
