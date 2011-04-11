@@ -108,7 +108,8 @@ class ChargifyBase(object):
         listing = None
 
     __ignore__ = ['api_key', 'sub_domain', 'base_host', 'request_host',
-        'id', '__xmlnodename__', 'Meta']
+        'id', '__xmlnodename__', 'Meta', 'created_at', 'modified_at',
+        'updated_at']
 
     api_key = ''
     sub_domain = ''
@@ -303,7 +304,6 @@ class ChargifyBase(object):
             'month': datetime.datetime.today().month,
             'year': datetime.datetime.today().year
         }
-
         if self.id:
             obj = self._applyS(self._put('/' + url + '/' + self.id + '.xml',
                 dom.toxml(encoding="utf-8")), self.__name__, node_name)
@@ -381,13 +381,20 @@ class ChargifyCustomer(ChargifyBase):
     __xmlnodename__ = 'customer'
 
     id = None
+    reference = ''
     first_name = ''
     last_name = ''
     email = ''
+    phone = None
     organization = ''
-    reference = ''
+    address = ''
+    address_2 = ''
+    city = ''
+    country = ''
+    state = ''
+    zip = ''
     created_at = None
-    modified_at = None
+    updated_at = None
 
     def __init__(self, apikey, subdomain):
         super(ChargifyCustomer, self).__init__(apikey, subdomain)
@@ -421,6 +428,9 @@ class ChargifyProductFamily(ChargifyBase):
     handle = ''
     name = ''
 
+    def __str__(self):
+        return '%s' % self.handle
+
     def getComponents(self):
         obj = ChargifyProductFamilyComponent(self.api_key, self.sub_domain)
         return obj.getByProductFamilyId(self.id)
@@ -442,6 +452,9 @@ class ChargifyProductFamilyComponent(ChargifyBase):
     updated_at = None
     created_at = None
 
+    def __str__(self):
+        return '%s' % self.name
+
     def getByProductFamilyId(self, id):
         return self._applyA(self._get('/product_families/' + str(id) + '/components.xml'),
             self.__name__, self.__xmlnodename__)
@@ -456,6 +469,13 @@ class ChargifyProductFamilyComponent(ChargifyBase):
             if len(filtered) > 0:
                 result = filtered[0]
         return result
+
+    def getProductFamily(self):
+        """
+        Gets product family
+        """
+        obj = ChargifyProductFamily(self.api_key, self.sub_domain)
+        return obj.getById(self.product_family_id)
 
 
 class ChargifyProduct(ChargifyBase):
@@ -481,6 +501,9 @@ class ChargifyProduct(ChargifyBase):
     accounting_code = ''
     interval_unit = ''
     interval = 0
+
+    def __str__(self):
+        return '%s' % self.handle
 
     def getByHandle(self, handle):
         return self._applyS(self._get('/products/handle/' + str(handle) +
