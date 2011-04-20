@@ -109,7 +109,7 @@ class ChargifyBase(object):
 
     __ignore__ = ['api_key', 'sub_domain', 'base_host', 'request_host',
         'id', '__xmlnodename__', 'Meta', 'created_at', 'modified_at',
-        'updated_at']
+        'updated_at', 'getByReference']
 
     api_key = ''
     sub_domain = ''
@@ -124,6 +124,11 @@ class ChargifyBase(object):
         self.api_key = apikey
         self.sub_domain = subdomain
         self.request_host = self.sub_domain + self.base_host
+
+    def __getstate__(self):
+        result = self.__dict__.copy()
+        map(lambda attr: result.pop(attr, None), self.__ignore__)
+        return result
 
     def __get_xml_value(self, nodelist):
         """
@@ -260,8 +265,6 @@ class ChargifyBase(object):
         http.putheader("Content-Type", 'text/xml; charset="UTF-8"')
         http.endheaders()
 
-        log.debug('sending: %s' % data)
-
         if data:
             http.send(data)
 
@@ -395,6 +398,7 @@ class ChargifyCustomer(ChargifyBase):
     zip = ''
     created_at = None
     updated_at = None
+
 
     def __init__(self, apikey, subdomain):
         super(ChargifyCustomer, self).__init__(apikey, subdomain)
