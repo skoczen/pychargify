@@ -108,7 +108,8 @@ class ChargifyBase(object):
         listing = None
 
     __ignore__ = ['api_key', 'sub_domain', 'base_host', 'request_host',
-        'id', '__xmlnodename__', 'Meta', 'created_at', 'modified_at',
+                  #FIXME: 'id',
+        '__xmlnodename__', 'Meta', 'created_at', 'modified_at',
         'updated_at', 'getByReference']
 
     api_key = ''
@@ -268,6 +269,7 @@ class ChargifyBase(object):
         if data:
             http.send(data)
 
+        log.debug('Requesting to %s' % url)
         response = http.getresponse()
         r = response.read()
 
