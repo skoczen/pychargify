@@ -62,11 +62,11 @@ Now you'll have access to classes the interact with the Chargify API, such as:
 `Chargify`  
 `ChargifyProduct`  
 `ChargifyCustomer`  
-`ChargifiySubscription`
-`ChargifiyCreditCard`
+`ChargifySubscription`
+`ChargifyCreditCard`
 
 `Chargify` is a helper class that makes initialization easier of the `ChargifyProduct`, `ChargifyCustomer`,
-`ChargifiySubscription` and `ChargifiyCreditCard` classes
+`ChargifySubscription` and `ChargifyCreditCard` classes
 
 
 ### Contributors
