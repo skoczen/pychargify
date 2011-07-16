@@ -550,7 +550,7 @@ class ChargifySubscription(ChargifyBase):
     current_period_started_at = None
     current_period_ends_at = None
     trial_started_at = None
-    trial_ended_attrial_ended_at = None
+    trial_ended_at = None
     activated_at = None
     expires_at = None
     created_at = None
