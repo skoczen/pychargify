@@ -220,7 +220,7 @@ class ChargifyBase(object):
                 else:
                     node = minidom.Element(property)
                     if type(value) == type(datetime.datetime.now()) or type(value) == type(datetime.date.today()):
-                        node_txt = dom.createTextNode(iso8601.tostring(value).encode('ascii', 'xmlcharrefreplace'))
+                        node_txt = dom.createTextNode(value.isoformat().encode('ascii', 'xmlcharrefreplace'))
                     else:
                         node_txt = dom.createTextNode(value.encode('ascii', 'xmlcharrefreplace'))
                     node.appendChild(node_txt)
