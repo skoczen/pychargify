@@ -219,7 +219,10 @@ class ChargifyBase(object):
                         element.appendChild(value._toxml(dom))
                 else:
                     node = minidom.Element(property)
-                    node_txt = dom.createTextNode(value.encode('ascii', 'xmlcharrefreplace'))
+                    if type(value) == type(datetime.datetime.now()) or type(value) == type(datetime.date.today()):
+                        node_txt = dom.createTextNode(iso8601.tostring(value).encode('ascii', 'xmlcharrefreplace'))
+                    else:
+                        node_txt = dom.createTextNode(value.encode('ascii', 'xmlcharrefreplace'))
                     node.appendChild(node_txt)
                     element.appendChild(node)
         return element
@@ -561,6 +564,7 @@ class ChargifySubscription(ChargifyBase):
     product_handle = ''
     credit_card = None
     components = None
+    next_billing_at = None
 
     def getComponents(self):
         """
